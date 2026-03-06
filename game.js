@@ -489,6 +489,13 @@ function bindStartScreen() {
           applyBuildAction(data.cellIndex, data.built);
         } else if (data.type === 'sell') {
           applySellAction(data.cellIndex);
+        } else if (data.type === 'bankrupt') {
+          state.bankrupt[1] = true;
+          state.pendingPayment = null;
+          state.onlineRequest = null;
+          showToast('상대가 파산했습니다. 승리!');
+          checkBankrupt();
+          tryNextTurn();
         }
       });
       conn.on('close', () => {
@@ -500,7 +507,7 @@ function bindStartScreen() {
     });
 
     state.onlinePeer.on('error', (err) => {
-      showToast('방 만들기 오류: ' + (err.message || err.type));
+      showToast('방 만들기 실패. 인터넷 연결을 확인한 뒤 다시 시도하세요.');
     });
   });
 
@@ -561,9 +568,24 @@ function bindStartScreen() {
       conn.on('close', () => {
         showToast('호스트와 연결이 끊어졌습니다.');
       });
+      conn.on('error', () => {
+        showToast('접속 실패. 방 코드·인터넷을 확인하거나 같은 Wi‑Fi에서 시도하세요.');
+      });
     });
     state.onlinePeer.on('error', (err) => {
-      showToast('참가 실패: ' + (err.message || err.type));
+      var msg = '참가 실패. ';
+      if (err.type === 'peer-unavailable' || (err.message && err.message.indexOf('unavailable') >= 0)) {
+        msg += '방 코드가 맞는지, 호스트가 대기 중인지 확인하세요.';
+      } else {
+        msg += (err.message || err.type) + ' — 인터넷 연결을 확인하세요.';
+      }
+      showToast(msg);
+      if (joinRoomBtn) joinRoomBtn.disabled = false;
+      if (roomCodeInput) roomCodeInput.disabled = false;
+      if (state.onlinePeer) {
+        try { state.onlinePeer.destroy(); } catch (e) {}
+        state.onlinePeer = null;
+      }
     });
   });
 }
@@ -1156,7 +1178,22 @@ function showSellModal(requiredAmount, onComplete) {
   const player = state.currentPlayer;
   const list = CELLS.map((c, i) => ({ i, cell: c })).filter(({ i, cell }) => cell.type === 'property' && state.ownership[i] === player);
 
+  if (requiredAmount && state.money[player - 1] < requiredAmount && list.length === 0) {
+    state.bankrupt[player - 1] = true;
+    state.pendingPayment = null;
+    const name = state.vsComputer && player >= 2 ? '컴퓨터' : `플레이어 ${player}`;
+    showToast(name + '은(는) 팔 땅이 없고 돈이 부족하여 파산했습니다. 게임 종료!');
+    checkBankrupt();
+    tryNextTurn();
+    return;
+  }
+
   if (state.onlineRole === 'guest' && state.onlineConn) {
+    if (requiredAmount && state.money[player - 1] < requiredAmount && list.length === 0) {
+      state.onlineConn.send({ type: 'bankrupt' });
+      showToast('팔 땅이 없고 돈이 부족하여 파산했습니다. 게임 종료!');
+      return;
+    }
     document.getElementById('sellModalTitle').textContent = requiredAmount ? '금액이 부족합니다. 땅을 팔아 주세요.' : '땅 판매';
     document.getElementById('sellModalMessage').textContent = requiredAmount
       ? `필요 금액: ₩${(requiredAmount / 10000).toFixed(0)}만 / 현재: ₩${(state.money[player - 1] / 10000).toFixed(0)}만`
