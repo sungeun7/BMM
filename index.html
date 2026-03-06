@@ -17,6 +17,13 @@
         <button type="button" class="btn btn-opt mode-opt selected" data-mode="human">친구와 대전 (2~4인)</button>
         <button type="button" class="btn btn-opt mode-opt" data-mode="computer">vs 컴퓨터</button>
       </div>
+      <div id="playTypeWrap" class="play-type-wrap">
+        <p class="start-sub play-type-label">대전 방식</p>
+        <div class="play-type-choice">
+          <button type="button" class="btn btn-opt play-type-opt selected" data-play-type="local">같은 기기</button>
+          <button type="button" class="btn btn-opt play-type-opt" data-play-type="online">온라인 (다른 와이파이)</button>
+        </div>
+      </div>
       <p class="start-sub player-count-label">인원 선택</p>
       <div class="player-count">
         <button type="button" class="btn btn-opt" data-players="2">2인</button>
@@ -28,6 +35,21 @@
           <input type="checkbox" id="teamModeCheck">
           <span>2대2 팀전</span>
         </label>
+      </div>
+      <div id="onlineWrap" class="online-wrap hidden">
+        <button type="button" id="createRoomBtn" class="btn btn-opt">방 만들기</button>
+        <div id="roomCodeArea" class="room-code-area hidden">
+          <p class="room-code-label">방 코드</p>
+          <p id="roomCodeDisplay" class="room-code-display"></p>
+          <p id="roomStatusText" class="room-status-text">참가 대기 중...</p>
+          <button type="button" id="onlineStartGameBtn" class="btn btn-roll hidden">게임 시작</button>
+        </div>
+        <p class="online-divider">또는</p>
+        <div class="join-area">
+          <input type="text" id="roomCodeInput" class="room-code-input" placeholder="6자리 코드 입력" maxlength="6" autocomplete="off">
+          <button type="button" id="joinRoomBtn" class="btn btn-opt">참가</button>
+        </div>
+        <p id="guestWaitText" class="guest-wait-text hidden">호스트가 게임을 시작할 때까지 기다리는 중...</p>
       </div>
       <button type="button" id="startGameBtn" class="btn btn-roll">게임 시작</button>
     </div>
@@ -130,6 +152,7 @@
 
     <div id="toast" class="toast hidden"></div>
   </div>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

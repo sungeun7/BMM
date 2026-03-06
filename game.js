@@ -158,9 +158,147 @@ const state = {
   lastDice: null,
   pendingPayment: null,
   jailTurns: [0, 0, 0, 0], // 무인도 N턴 휴식 (0 = 휴식 없음)
+  onlineRole: 'local',   // 'local' | 'host' | 'guest'
+  onlinePeer: null,
+  onlineConn: null,
+  onlineRequest: null,   // { type: 'buy'|'build'|'sell', cellIndex?, requiredAmount? }
 };
 
 const dom = {};
+
+function getStateForSync() {
+  return {
+    numPlayers: state.numPlayers,
+    teamMode: state.teamMode,
+    vsComputer: state.vsComputer,
+    currentPlayer: state.currentPlayer,
+    positions: [...state.positions],
+    money: [...state.money],
+    ownership: [...state.ownership],
+    buildingLevel: [...state.buildingLevel],
+    bankrupt: [...state.bankrupt],
+    canRoll: state.canRoll,
+    rolledThisTurn: state.rolledThisTurn,
+    lastDice: state.lastDice ? [...state.lastDice] : null,
+    jailTurns: [...state.jailTurns],
+    pendingPayment: state.pendingPayment,
+    onlineRequest: state.onlineRequest,
+  };
+}
+
+function applySyncedState(s) {
+  if (!s) return;
+  state.numPlayers = s.numPlayers ?? state.numPlayers;
+  state.teamMode = !!s.teamMode;
+  state.vsComputer = !!s.vsComputer;
+  state.currentPlayer = s.currentPlayer ?? 1;
+  state.positions = s.positions ? [...s.positions] : state.positions;
+  state.money = s.money ? [...s.money] : state.money;
+  state.ownership = s.ownership ? [...s.ownership] : state.ownership;
+  state.buildingLevel = s.buildingLevel ? [...s.buildingLevel] : state.buildingLevel;
+  state.bankrupt = s.bankrupt ? [...s.bankrupt] : state.bankrupt;
+  state.canRoll = s.canRoll !== undefined ? s.canRoll : state.canRoll;
+  state.rolledThisTurn = !!s.rolledThisTurn;
+  state.lastDice = s.lastDice ? [...s.lastDice] : null;
+  state.jailTurns = s.jailTurns ? [...s.jailTurns] : state.jailTurns;
+  state.pendingPayment = s.pendingPayment ?? null;
+  state.onlineRequest = s.onlineRequest ?? null;
+  buildBoard();
+  renderPlayers();
+  updateBoardOwnership();
+  updateBoardBuildings();
+  updatePanels();
+  updateTurnText();
+  if (state.lastDice && state.lastDice.length === 2) {
+    showDice(state.lastDice[0], state.lastDice[1]);
+  }
+  if (dom.rollBtn) {
+    const isGuest = state.onlineRole === 'guest';
+    const canRollAsGuest = state.currentPlayer === 2 && state.canRoll;
+    dom.rollBtn.disabled = isGuest ? !canRollAsGuest : (state.vsComputer && state.currentPlayer >= 2);
+  }
+}
+
+function sendStateToPeer(extra) {
+  if (state.onlineRole !== 'host' || !state.onlineConn) return;
+  const payload = { ...getStateForSync(), ...extra };
+  try {
+    state.onlineConn.send(payload);
+  } catch (e) {
+    console.warn('sendStateToPeer', e);
+  }
+}
+
+function applyBuyAction(cellIndex, buy) {
+  state.onlineRequest = null;
+  const cell = CELLS[cellIndex];
+  const player = state.currentPlayer;
+  if (buy && state.money[player - 1] >= cell.price) {
+    state.money[player - 1] -= cell.price;
+    state.ownership[cellIndex] = player;
+    soundBuy();
+    updateBoardOwnership();
+    updatePanels();
+  }
+  tryNextTurn();
+}
+
+function applyBuildAction(cellIndex, built) {
+  state.onlineRequest = null;
+  if (built) {
+    const level = state.buildingLevel[cellIndex] || 0;
+    const nextLv = level + 1;
+    const cost = getBuildCost(cellIndex, nextLv);
+    const player = state.currentPlayer;
+    if (state.money[player - 1] >= cost) {
+      state.money[player - 1] -= cost;
+      state.buildingLevel[cellIndex] = nextLv;
+      soundBuy();
+      updatePanels();
+      updateBoardBuildings();
+    }
+  }
+  tryNextTurn();
+}
+
+function applySellAction(cellIndex) {
+  const player = state.currentPlayer;
+  const idx = player - 1;
+  const price = getSellPrice(cellIndex);
+  state.money[idx] += price;
+  state.ownership[cellIndex] = 0;
+  state.buildingLevel[cellIndex] = 0;
+  updateBoardOwnership();
+  updateBoardBuildings();
+  updatePanels();
+  const req = state.pendingPayment && state.pendingPayment.amount;
+  if (req && state.money[idx] >= req) {
+    if (state.pendingPayment.type === 'rent') {
+      state.money[idx] -= state.pendingPayment.amount;
+      state.money[state.pendingPayment.toPlayer - 1] += state.pendingPayment.amount;
+    } else {
+      state.money[idx] -= state.pendingPayment.amount;
+    }
+    state.pendingPayment = null;
+    state.onlineRequest = null;
+    checkBankrupt();
+    tryNextTurn();
+  } else {
+    const hasMore = CELLS.some((c, i) => c.type === 'property' && state.ownership[i] === player);
+    if (hasMore && state.money[idx] < (req || 0)) {
+      state.onlineRequest = { type: 'sell', requiredAmount: req };
+      sendStateToPeer();
+    } else {
+      state.pendingPayment = null;
+      state.onlineRequest = null;
+      if (state.money[idx] < (req || 0)) {
+        state.bankrupt[idx] = true;
+        checkBankrupt();
+      }
+      tryNextTurn();
+    }
+  }
+}
 
 function getTeam(player) {
   if (!state.teamMode) return null;
@@ -233,36 +371,200 @@ function init() {
 function bindStartScreen() {
   let selectedPlayers = 2;
   let vsComputer = false;
+  let playType = 'local'; // 'local' | 'online'
+
+  const countWrap = document.querySelector('.player-count');
+  const countLabel = document.querySelector('.player-count-label');
+  const playTypeWrap = document.getElementById('playTypeWrap');
+  const onlineWrap = document.getElementById('onlineWrap');
+  const startGameBtn = document.getElementById('startGameBtn');
+  const createRoomBtn = document.getElementById('createRoomBtn');
+  const roomCodeArea = document.getElementById('roomCodeArea');
+  const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+  const roomStatusText = document.getElementById('roomStatusText');
+  const onlineStartGameBtn = document.getElementById('onlineStartGameBtn');
+  const roomCodeInput = document.getElementById('roomCodeInput');
+  const joinRoomBtn = document.getElementById('joinRoomBtn');
+  const guestWaitText = document.getElementById('guestWaitText');
+
+  function updateVisibility() {
+    const isHuman = !vsComputer;
+    if (playTypeWrap) playTypeWrap.classList.toggle('hidden', !isHuman);
+    if (isHuman && playType === 'online') {
+      if (countWrap) countWrap.classList.add('hidden');
+      if (countLabel) countLabel.classList.add('hidden');
+      if (dom.teamModeWrap) dom.teamModeWrap.classList.add('hidden');
+      if (onlineWrap) onlineWrap.classList.remove('hidden');
+      if (startGameBtn) startGameBtn.classList.add('hidden');
+    } else {
+      if (countWrap) countWrap.classList.remove('hidden');
+      if (countLabel) countLabel.classList.remove('hidden');
+      if (dom.teamModeWrap) dom.teamModeWrap.classList.toggle('hidden', selectedPlayers !== 4);
+      if (onlineWrap) onlineWrap.classList.add('hidden');
+      if (startGameBtn) startGameBtn.classList.remove('hidden');
+      if (roomCodeArea) roomCodeArea.classList.add('hidden');
+      if (guestWaitText) guestWaitText.classList.add('hidden');
+    }
+  }
 
   document.querySelectorAll('.mode-opt[data-mode]').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.mode-opt').forEach((b) => b.classList.remove('selected'));
       btn.classList.add('selected');
       vsComputer = btn.dataset.mode === 'computer';
-      const countWrap = document.querySelector('.player-count');
-      const countLabel = document.querySelector('.player-count-label');
-      const teamWrap = dom.teamModeWrap;
-      if (countWrap) countWrap.classList.remove('hidden');
-      if (countLabel) countLabel.classList.remove('hidden');
-      if (teamWrap) teamWrap.classList.toggle('hidden', selectedPlayers !== 4);
+      updateVisibility();
+      if (!vsComputer && playType === 'local') {
+        if (dom.teamModeWrap) dom.teamModeWrap.classList.toggle('hidden', selectedPlayers !== 4);
+      }
+    });
+  });
+
+  document.querySelectorAll('.play-type-opt[data-play-type]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.play-type-opt').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      playType = btn.dataset.playType;
+      updateVisibility();
+      if (playType === 'local' && !vsComputer) {
+        if (dom.teamModeWrap) dom.teamModeWrap.classList.toggle('hidden', selectedPlayers !== 4);
+      }
     });
   });
 
   document.querySelectorAll('.btn-opt[data-players]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (playType === 'online') return;
       document.querySelectorAll('.btn-opt[data-players]').forEach((b) => b.classList.remove('selected'));
       btn.classList.add('selected');
       selectedPlayers = parseInt(btn.dataset.players, 10);
-      dom.teamModeWrap.classList.toggle('hidden', selectedPlayers !== 4);
+      if (dom.teamModeWrap) dom.teamModeWrap.classList.toggle('hidden', selectedPlayers !== 4);
       if (selectedPlayers !== 4) dom.teamModeCheck.checked = false;
     });
   });
-  document.querySelector('.btn-opt[data-players="2"]').classList.add('selected');
+  if (document.querySelector('.btn-opt[data-players="2"]')) {
+    document.querySelector('.btn-opt[data-players="2"]').classList.add('selected');
+  }
 
-  document.getElementById('startGameBtn').addEventListener('click', () => {
+  startGameBtn.addEventListener('click', () => {
     const num = selectedPlayers;
     const teamMode = num === 4 && dom.teamModeCheck.checked;
     startGame(num, teamMode, vsComputer);
+  });
+
+  function randomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+
+  createRoomBtn.addEventListener('click', () => {
+    if (typeof Peer === 'undefined') {
+      showToast('PeerJS를 불러올 수 없습니다. 인터넷 연결을 확인하세요.');
+      return;
+    }
+    const code = randomCode();
+    state.onlineRole = 'host';
+    state.onlineRequest = null;
+    try {
+      state.onlinePeer = new Peer(code);
+    } catch (e) {
+      showToast('방 만들기 실패: ' + (e.message || '알 수 없음'));
+      return;
+    }
+    createRoomBtn.classList.add('hidden');
+    roomCodeArea.classList.remove('hidden');
+    roomCodeDisplay.textContent = code;
+    roomStatusText.textContent = '참가 대기 중...';
+    onlineStartGameBtn.classList.add('hidden');
+
+    state.onlinePeer.on('connection', (conn) => {
+      state.onlineConn = conn;
+      conn.on('data', (data) => {
+        if (data.type === 'roll') {
+          rollDice();
+        } else if (data.type === 'buy') {
+          applyBuyAction(data.cellIndex, data.buy);
+        } else if (data.type === 'build') {
+          applyBuildAction(data.cellIndex, data.built);
+        } else if (data.type === 'sell') {
+          applySellAction(data.cellIndex);
+        }
+      });
+      conn.on('close', () => {
+        state.onlineConn = null;
+        roomStatusText.textContent = '상대가 나갔습니다.';
+      });
+      roomStatusText.textContent = '상대가 참가했습니다!';
+      onlineStartGameBtn.classList.remove('hidden');
+    });
+
+    state.onlinePeer.on('error', (err) => {
+      showToast('방 만들기 오류: ' + (err.message || err.type));
+    });
+  });
+
+  onlineStartGameBtn.addEventListener('click', () => {
+    if (!state.onlineConn) return;
+    startGame(2, false, false);
+    sendStateToPeer({ ...getStateForSync(), gameStarted: true });
+    dom.startScreen.classList.add('hidden');
+    dom.header.classList.remove('hidden');
+    dom.gameArea.classList.remove('hidden');
+    roomCodeArea.classList.add('hidden');
+  });
+
+  joinRoomBtn.addEventListener('click', () => {
+    if (typeof Peer === 'undefined') {
+      showToast('PeerJS를 불러올 수 없습니다. 인터넷 연결을 확인하세요.');
+      return;
+    }
+    const code = (roomCodeInput.value || '').trim().toUpperCase();
+    if (code.length !== 6) {
+      showToast('6자리 방 코드를 입력하세요.');
+      return;
+    }
+    state.onlineRole = 'guest';
+    state.onlineRequest = null;
+    state.onlinePeer = new Peer();
+    state.onlinePeer.on('open', () => {
+      const conn = state.onlinePeer.connect(code);
+      conn.on('open', () => {
+        state.onlineConn = conn;
+        joinRoomBtn.disabled = true;
+        roomCodeInput.disabled = true;
+        guestWaitText.classList.remove('hidden');
+      });
+      conn.on('data', (data) => {
+        if (data.type === 'animateMove') {
+          state.lastDice = data.lastDice;
+          initAudio();
+          soundDice();
+          showDice(data.lastDice[0], data.lastDice[1]);
+          moveCurrentPlayer(data.steps, true);
+          return;
+        }
+        if (data.gameStarted && data.currentPlayer !== undefined) {
+          applySyncedState(data);
+          dom.startScreen.classList.add('hidden');
+          dom.header.classList.remove('hidden');
+          dom.gameArea.classList.remove('hidden');
+          guestWaitText.classList.add('hidden');
+          showToast('게임이 시작되었습니다!');
+        } else if (data.currentPlayer !== undefined) {
+          applySyncedState(data);
+          if (state.onlineRequest && state.currentPlayer === 2) {
+            showOnlineRequestModal();
+          }
+        }
+      });
+      conn.on('close', () => {
+        showToast('호스트와 연결이 끊어졌습니다.');
+      });
+    });
+    state.onlinePeer.on('error', (err) => {
+      showToast('참가 실패: ' + (err.message || err.type));
+    });
   });
 }
 
@@ -381,6 +683,23 @@ function goToMenu() {
     clearTimeout(state._computerTimer);
     state._computerTimer = null;
   }
+  state.onlineRole = 'local';
+  state.onlineConn = null;
+  state.onlineRequest = null;
+  if (state.onlinePeer) {
+    try { state.onlinePeer.destroy(); } catch (e) {}
+    state.onlinePeer = null;
+  }
+  const createRoomBtn = document.getElementById('createRoomBtn');
+  const roomCodeArea = document.getElementById('roomCodeArea');
+  const joinRoomBtn = document.getElementById('joinRoomBtn');
+  const roomCodeInput = document.getElementById('roomCodeInput');
+  const guestWaitText = document.getElementById('guestWaitText');
+  if (createRoomBtn) createRoomBtn.classList.remove('hidden');
+  if (roomCodeArea) roomCodeArea.classList.add('hidden');
+  if (joinRoomBtn) joinRoomBtn.disabled = false;
+  if (roomCodeInput) roomCodeInput.disabled = false;
+  if (guestWaitText) guestWaitText.classList.add('hidden');
   dom.header.classList.add('hidden');
   dom.gameArea.classList.add('hidden');
   dom.startScreen.classList.remove('hidden');
@@ -392,8 +711,12 @@ function bindEvents() {
   dom.rollBtn.addEventListener('click', rollDice);
   document.addEventListener('keydown', (e) => {
     if (e.code !== 'Space' && e.key !== ' ') return;
-    if (!dom.rollBtn || dom.rollBtn.disabled || !state.canRoll) return;
     if (dom.gameArea && dom.gameArea.classList.contains('hidden')) return;
+    if (state.onlineRole === 'guest') {
+      if (state.currentPlayer !== 2 || !state.canRoll || !state.onlineConn) return;
+    } else {
+      if (!dom.rollBtn || dom.rollBtn.disabled || !state.canRoll) return;
+    }
     e.preventDefault();
     rollDice();
   });
@@ -411,6 +734,10 @@ function bindEvents() {
 
 function rollDice() {
   if (!state.canRoll) return;
+  if (state.onlineRole === 'guest' && state.onlineConn) {
+    state.onlineConn.send({ type: 'roll' });
+    return;
+  }
   initAudio();
   soundDice();
   state.canRoll = false;
@@ -421,6 +748,11 @@ function rollDice() {
   state.lastDice = [d1, d2];
   const steps = d1 + d2;
 
+  if (state.onlineRole === 'host' && state.onlineConn) {
+    try {
+      state.onlineConn.send({ type: 'animateMove', steps, lastDice: [d1, d2] });
+    } catch (err) {}
+  }
   showDice(d1, d2);
 
   setTimeout(() => {
@@ -439,6 +771,7 @@ function tryNextTurn() {
       if (panel) panel.classList.toggle('active', state.currentPlayer === p);
     }
     if (state.vsComputer && state.currentPlayer >= 2 && !state.bankrupt[state.currentPlayer - 1]) scheduleComputerTurn();
+    sendStateToPeer();
     return;
   }
   state.lastDice = null;
@@ -554,7 +887,7 @@ function showDice(d1, d2) {
 
 const MOVE_STEP_MS = 280;
 
-function moveCurrentPlayer(steps) {
+function moveCurrentPlayer(steps, animateOnly) {
   const player = state.currentPlayer;
   let pos = state.positions[player - 1];
   let step = 0;
@@ -563,6 +896,7 @@ function moveCurrentPlayer(steps) {
     if (step >= steps) {
       updatePanels();
       updateBoardOwnership();
+      if (animateOnly) return;
       setTimeout(() => landOnCell(pos, player), 320);
       return;
     }
@@ -594,6 +928,9 @@ function landOnCell(cellIndex, player) {
       if (state.ownership[cellIndex] === 0) {
         if (isComputerTurn()) {
           computerBuy(cellIndex);
+        } else if (state.onlineRole === 'host' && state.currentPlayer === 2) {
+          state.onlineRequest = { type: 'buy', cellIndex };
+          sendStateToPeer();
         } else {
           showBuyModal(cellIndex);
         }
@@ -619,6 +956,10 @@ function landOnCell(cellIndex, player) {
               checkBankrupt();
               tryNextTurn();
             });
+          } else if (state.onlineRole === 'host' && state.currentPlayer === 2) {
+            state.pendingPayment = { type: 'rent', amount: fee, toPlayer: owner, cellIndex };
+            state.onlineRequest = { type: 'sell', requiredAmount: fee };
+            sendStateToPeer();
           } else {
             state.pendingPayment = { type: 'rent', amount: fee, toPlayer: owner, cellIndex };
             showSellModal(fee, () => {
@@ -633,6 +974,9 @@ function landOnCell(cellIndex, player) {
       } else {
         if (isComputerTurn()) {
           computerBuild(cellIndex);
+        } else if (state.onlineRole === 'host' && state.currentPlayer === 2) {
+          state.onlineRequest = { type: 'build', cellIndex };
+          sendStateToPeer();
         } else {
           showBuildModal(cellIndex);
         }
@@ -654,6 +998,10 @@ function landOnCell(cellIndex, player) {
             checkBankrupt();
             tryNextTurn();
           });
+        } else if (state.onlineRole === 'host' && state.currentPlayer === 2) {
+          state.pendingPayment = { type: 'tax', amount: tax };
+          state.onlineRequest = { type: 'sell', requiredAmount: tax };
+          sendStateToPeer();
         } else {
           state.pendingPayment = { type: 'tax', amount: tax };
           showSellModal(tax, () => {
@@ -703,6 +1051,14 @@ function getSellPrice(cellIndex) {
   return Math.floor(totalValue * SELL_RATIO);
 }
 
+function showOnlineRequestModal() {
+  if (!state.onlineRequest || state.onlineRole !== 'guest') return;
+  const req = state.onlineRequest;
+  if (req.type === 'buy') showBuyModal(req.cellIndex);
+  else if (req.type === 'build') showBuildModal(req.cellIndex);
+  else if (req.type === 'sell') showSellModal(req.requiredAmount, () => {});
+}
+
 function showBuyModal(cellIndex) {
   const cell = CELLS[cellIndex];
   dom.modal.dataset.cellIndex = cellIndex;
@@ -735,6 +1091,22 @@ function showBuildModal(cellIndex) {
 
   buildModalTitle.textContent = `${cell.name} - 건물 짓기`;
   buildModalMessage.textContent = level >= 3 ? '호텔까지 완성되었습니다.' : '건물을 짓으면 통행료가 올라갑니다.';
+
+  if (state.onlineRole === 'guest' && state.onlineConn) {
+    buildOptions.innerHTML = '';
+    if (level < 3) {
+      const cost = getBuildCost(cellIndex, level + 1);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn build-opt';
+      btn.textContent = `건물 짓기 ₩${(cost / 10000).toFixed(0)}만`;
+      btn.onclick = () => { state.onlineConn.send({ type: 'build', cellIndex, built: true }); buildModal.classList.add('hidden'); };
+      buildOptions.appendChild(btn);
+    }
+    buildModalPass.onclick = () => { state.onlineConn.send({ type: 'build', cellIndex, built: false }); buildModal.classList.add('hidden'); };
+    buildModal.classList.remove('hidden');
+    return;
+  }
 
   if (level >= 3) {
     buildOptions.innerHTML = '';
@@ -783,6 +1155,33 @@ function showBuildModal(cellIndex) {
 function showSellModal(requiredAmount, onComplete) {
   const player = state.currentPlayer;
   const list = CELLS.map((c, i) => ({ i, cell: c })).filter(({ i, cell }) => cell.type === 'property' && state.ownership[i] === player);
+
+  if (state.onlineRole === 'guest' && state.onlineConn) {
+    document.getElementById('sellModalTitle').textContent = requiredAmount ? '금액이 부족합니다. 땅을 팔아 주세요.' : '땅 판매';
+    document.getElementById('sellModalMessage').textContent = requiredAmount
+      ? `필요 금액: ₩${(requiredAmount / 10000).toFixed(0)}만 / 현재: ₩${(state.money[player - 1] / 10000).toFixed(0)}만`
+      : '판매 시 (땅+건물) 가격의 70%를 받습니다.';
+    const sellList = document.getElementById('sellList');
+    sellList.innerHTML = '';
+    list.forEach(({ i, cell }) => {
+      const price = getSellPrice(i);
+      const row = document.createElement('div');
+      row.className = 'sell-row';
+      row.innerHTML = `<span>${cell.name}</span><button type="button" class="btn btn-sell" data-index="${i}">판매 ₩${(price / 10000).toFixed(0)}만</button>`;
+      sellList.appendChild(row);
+    });
+    sellList.querySelectorAll('.btn-sell').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.index, 10);
+        state.onlineConn.send({ type: 'sell', cellIndex: idx });
+        document.getElementById('sellModal').classList.add('hidden');
+      });
+    });
+    document.getElementById('sellModalDone').onclick = () => document.getElementById('sellModal').classList.add('hidden');
+    document.getElementById('sellModalBankrupt').classList.add('hidden');
+    document.getElementById('sellModal').classList.remove('hidden');
+    return;
+  }
 
   document.getElementById('sellModalTitle').textContent = requiredAmount ? '금액이 부족합니다. 땅을 팔아 주세요.' : '땅 판매';
   document.getElementById('sellModalMessage').textContent = requiredAmount
@@ -858,8 +1257,13 @@ function showSellModal(requiredAmount, onComplete) {
 }
 
 function modalAction(buy) {
-  dom.modal.classList.add('hidden');
   const cellIndex = parseInt(dom.modal.dataset.cellIndex, 10);
+  if (state.onlineRole === 'guest' && state.onlineConn) {
+    state.onlineConn.send({ type: 'buy', cellIndex, buy });
+    dom.modal.classList.add('hidden');
+    return;
+  }
+  dom.modal.classList.add('hidden');
   const cell = CELLS[cellIndex];
   const player = state.currentPlayer;
 
@@ -920,6 +1324,7 @@ function nextTurn() {
   if (state.vsComputer && cp >= 2 && !state.bankrupt[cp - 1]) {
     scheduleComputerTurn();
   }
+  sendStateToPeer();
 }
 
 function updateTurnText() {

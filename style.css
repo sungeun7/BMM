@@ -149,6 +149,92 @@ body {
   margin-bottom: 20px;
 }
 
+/* 대전 방식 · 온라인 */
+.play-type-wrap {
+  margin-bottom: 16px;
+  width: 100%;
+  max-width: 280px;
+}
+.play-type-label {
+  color: rgba(255,255,255,0.9);
+  margin-bottom: 10px;
+  font-size: 0.95rem;
+}
+.play-type-choice {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.play-type-choice .btn-opt {
+  flex: 1;
+  min-width: 120px;
+}
+.online-wrap {
+  width: 100%;
+  max-width: 280px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 10px;
+}
+.online-wrap .btn-opt {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.room-code-area {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+}
+.room-code-label {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.8);
+  margin-bottom: 4px;
+}
+.room-code-display {
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+.room-status-text {
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.85);
+  margin-bottom: 10px;
+}
+.online-divider {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.6);
+  margin: 12px 0;
+}
+.join-area {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.room-code-input {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 1rem;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  color: var(--white);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+.room-code-input::placeholder {
+  color: rgba(255,255,255,0.4);
+}
+.guest-wait-text {
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.85);
+}
+
 .team-toggle {
   display: flex;
   align-items: center;
