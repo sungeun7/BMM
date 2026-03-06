@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>부루마블 - 모바일</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="startScreen" class="start-screen">
+      <h1>부루마블</h1>
+      <p class="start-sub">플레이 모드</p>
+      <div class="mode-choice">
+        <button type="button" class="btn btn-opt mode-opt selected" data-mode="human">친구와 대전 (2~4인)</button>
+        <button type="button" class="btn btn-opt mode-opt" data-mode="computer">vs 컴퓨터</button>
+      </div>
+      <p class="start-sub player-count-label">인원 선택</p>
+      <div class="player-count">
+        <button type="button" class="btn btn-opt" data-players="2">2인</button>
+        <button type="button" class="btn btn-opt" data-players="3">3인</button>
+        <button type="button" class="btn btn-opt" data-players="4">4인</button>
+      </div>
+      <div id="teamModeWrap" class="team-mode-wrap hidden">
+        <label class="team-toggle">
+          <input type="checkbox" id="teamModeCheck">
+          <span>2대2 팀전</span>
+        </label>
+      </div>
+      <button type="button" id="startGameBtn" class="btn btn-roll">게임 시작</button>
+    </div>
+
+    <header class="header hidden" id="header">
+      <div class="header-row">
+        <h1>부루마블</h1>
+        <button type="button" id="backToMenuBtn" class="btn btn-menu">메뉴로 돌아가기</button>
+      </div>
+      <div class="turn-indicator">
+        <span id="turnText">플레이어 1의 차례</span>
+      </div>
+    </header>
+
+    <main class="game-area hidden" id="gameArea">
+      <div class="board-wrap">
+        <div id="board" class="board"></div>
+        <div id="boardCenter" class="board-center">
+          <img src="우리나라.jpg" alt="한국 지도" class="korea-map korea-map-img">
+        </div>
+        <div id="players" class="players"></div>
+      </div>
+
+      <div class="controls">
+        <div class="dice-area">
+          <div class="dice" id="dice1" aria-label="주사위 1"><span class="dot"></span></div>
+          <div class="dice" id="dice2" aria-label="주사위 2"><span class="dot"></span></div>
+        </div>
+        <button type="button" id="rollBtn" class="btn btn-roll">주사위 굴리기</button>
+      </div>
+
+      <div class="player-panels" id="playerPanels">
+        <div class="panel p1" id="panel1">
+          <div class="panel-header">
+            <span class="token" data-color="red"></span>
+            <span id="label1">플레이어 1</span>
+          </div>
+          <div class="money">₩<span id="money1">1500000</span></div>
+          <div class="properties" id="props1"></div>
+        </div>
+        <div class="panel p2" id="panel2">
+          <div class="panel-header">
+            <span class="token" data-color="blue"></span>
+            <span id="label2">플레이어 2</span>
+          </div>
+          <div class="money">₩<span id="money2">1500000</span></div>
+          <div class="properties" id="props2"></div>
+        </div>
+        <div class="panel p3 hidden" id="panel3">
+          <div class="panel-header">
+            <span class="token" data-color="green"></span>
+            <span id="label3">플레이어 3</span>
+          </div>
+          <div class="money">₩<span id="money3">1500000</span></div>
+          <div class="properties" id="props3"></div>
+        </div>
+        <div class="panel p4 hidden" id="panel4">
+          <div class="panel-header">
+            <span class="token" data-color="gold"></span>
+            <span id="label4">플레이어 4</span>
+          </div>
+          <div class="money">₩<span id="money4">1500000</span></div>
+          <div class="properties" id="props4"></div>
+        </div>
+      </div>
+    </main>
+
+    <div id="modal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="modalTitle">땅 구매</h2>
+        <p id="modalMessage"></p>
+        <div class="modal-actions">
+          <button type="button" id="modalBuy" class="btn">구매 (₩<span id="modalPrice">0</span>)</button>
+          <button type="button" id="modalSellFirst" class="btn btn-outline hidden">땅 팔기</button>
+          <button type="button" id="modalPass" class="btn btn-outline">패스</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sellModal" class="modal hidden">
+      <div class="modal-content modal-sell">
+        <h2 id="sellModalTitle">땅 판매</h2>
+        <p id="sellModalMessage"></p>
+        <div id="sellList" class="sell-list"></div>
+        <div class="modal-actions">
+          <button type="button" id="sellModalDone" class="btn">완료</button>
+          <button type="button" id="sellModalBankrupt" class="btn btn-outline hidden">파산</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="buildModal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="buildModalTitle">건물 짓기</h2>
+        <p id="buildModalMessage"></p>
+        <div id="buildOptions" class="build-options"></div>
+        <button type="button" id="buildModalPass" class="btn btn-outline">건너뛰기</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
