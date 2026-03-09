@@ -1041,20 +1041,86 @@ function landOnCell(cellIndex, player) {
       showToast('무인도! 3턴 휴식.');
       tryNextTurn();
       break;
-    case 'chance':
+    case 'chance': {
+      const REPAIR_PER_LEVEL = [0, 20000, 35000, 55000]; // 없음, 별장, 빌딩, 호텔당 수리비(원)
       const chanceResults = [
-        { msg: '복권 당첨! ₩10만 수령', money: 100000 },
-        { msg: '길에서 ₩5만 획득', money: 50000 },
-        { msg: '기부금 ₩3만', money: -30000 },
-        { msg: '보너스 ₩8만', money: 80000 },
+        { type: 'money', msg: '복권 당첨! ₩10만 수령', money: 100000 },
+        { type: 'money', msg: '길에서 ₩5만 획득', money: 50000 },
+        { type: 'money', msg: '기부금 ₩3만', money: -30000 },
+        { type: 'money', msg: '보너스 ₩8만', money: 80000 },
+        { type: 'money', msg: '선물 대금 ₩5만', money: -50000 },
+        { type: 'sellMostExpensive', msg: '황금열쇠: 제일 비싼 땅을 반값에 매각합니다.' },
+        { type: 'repairFee', msg: '황금열쇠: 보유 건물당 수리비를 납부합니다.' },
+        { type: 'giveAwayProperty', msg: '황금열쇠: 자신의 땅 하나를 다른 플레이어에게 줍니다.' },
       ];
       const r = chanceResults[Math.floor(Math.random() * chanceResults.length)];
-      state.money[idx] += r.money;
       soundChance();
-      showToast(r.msg);
+      if (r.type === 'money') {
+        state.money[idx] += r.money;
+        showToast(r.msg);
+      } else if (r.type === 'sellMostExpensive') {
+        const owned = CELLS.map((c, i) => ({ i, cell: c }))
+          .filter(({ i, cell }) => cell.type === 'property' && state.ownership[i] === player)
+          .map(({ i }) => ({ i, value: getTotalPropertyValue(i) }))
+          .sort((a, b) => b.value - a.value);
+        if (owned.length > 0) {
+          const { i: cellIndex, value: totalVal } = owned[0];
+          const half = Math.floor(totalVal * 0.5);
+          state.money[idx] += half;
+          state.ownership[cellIndex] = 0;
+          state.buildingLevel[cellIndex] = 0;
+          updateBoardOwnership();
+          updateBoardBuildings();
+          updatePanels();
+          showToast(`${CELLS[cellIndex].name} 반값 매각! ₩${(half / 10000).toFixed(0)}만 수령`);
+        } else {
+          showToast('소유 땅이 없어 적용되지 않습니다.');
+        }
+      } else if (r.type === 'repairFee') {
+        let repairTotal = 0;
+        for (let i = 0; i < BOARD_SIZE; i++) {
+          if (state.ownership[i] !== player) continue;
+          const level = state.buildingLevel[i] || 0;
+          if (level >= 1) repairTotal += REPAIR_PER_LEVEL[level];
+        }
+        if (repairTotal > 0) {
+          state.money[idx] -= repairTotal;
+          showToast(`건물 수리비 ₩${(repairTotal / 10000).toFixed(0)}만 납부!`);
+        } else {
+          showToast('보유 건물이 없어 적용되지 않습니다.');
+        }
+      } else if (r.type === 'giveAwayProperty') {
+        const owned = CELLS.map((c, i) => ({ i, cell: c }))
+          .filter(({ i, cell }) => cell.type === 'property' && state.ownership[i] === player)
+          .map(({ i }) => ({ i, value: getTotalPropertyValue(i) }))
+          .sort((a, b) => b.value - a.value);
+        if (owned.length > 0) {
+          const others = [];
+          for (let p = 1; p <= state.numPlayers; p++) {
+            if (p !== player && !state.bankrupt[p - 1]) others.push(p);
+          }
+          const target = others.length > 0 ? others[Math.floor(Math.random() * others.length)] : 0;
+          const { i: cellIndex } = owned[0];
+          state.ownership[cellIndex] = target;
+          const name = CELLS[cellIndex].name;
+          if (target > 0) {
+            const targetName = state.vsComputer && target >= 2 ? `컴퓨터 ${target}` : `플레이어 ${target}`;
+            showToast(`${name}을(를) ${targetName}에게 넘겼습니다.`);
+          } else {
+            state.buildingLevel[cellIndex] = 0;
+            showToast(`${name}을(를) 잃었습니다. (받을 상대 없음)`);
+          }
+          updateBoardOwnership();
+          updateBoardBuildings();
+          updatePanels();
+        } else {
+          showToast('소유 땅이 없어 적용되지 않습니다.');
+        }
+      }
       checkBankrupt();
       tryNextTurn();
       break;
+    }
     default:
       tryNextTurn();
   }
@@ -1062,15 +1128,20 @@ function landOnCell(cellIndex, player) {
 
 const SELL_RATIO = 0.7; // 땅+건물 판매 시 가격의 70%
 
-function getSellPrice(cellIndex) {
+function getTotalPropertyValue(cellIndex) {
   const c = CELLS[cellIndex];
-  if (!c || !c.price) return 0;
+  if (!c || !c.price || c.type !== 'property') return 0;
   const level = state.buildingLevel[cellIndex] || 0;
-  let totalValue = c.price;
+  let total = c.price;
   for (let lv = 1; lv <= level; lv++) {
-    totalValue += Math.floor(c.price * BUILD_COST_RATE[lv]);
+    total += Math.floor(c.price * BUILD_COST_RATE[lv]);
   }
-  return Math.floor(totalValue * SELL_RATIO);
+  return total;
+}
+
+function getSellPrice(cellIndex) {
+  const total = getTotalPropertyValue(cellIndex);
+  return Math.floor(total * SELL_RATIO);
 }
 
 function showOnlineRequestModal() {
@@ -1445,9 +1516,9 @@ function checkBankrupt() {
     const team2Out = state.bankrupt[2] && state.bankrupt[3];
     if (team1Out || team2Out) {
       soundWin();
-      showToast(team1Out ? '팀 B 승리!' : '팀 A 승리!');
+      showToast(team1Out ? '최후의 1팀! 팀 B 승리! 게임 종료.' : '최후의 1팀! 팀 A 승리! 게임 종료.');
       state.canRoll = false;
-      dom.rollBtn.disabled = true;
+      if (dom.rollBtn) dom.rollBtn.disabled = true;
     }
   } else {
     const active = state.bankrupt.slice(0, state.numPlayers).filter((b) => !b).length;
@@ -1455,15 +1526,15 @@ function checkBankrupt() {
       const winner = state.bankrupt.findIndex((b) => !b) + 1;
       soundWin();
       const winMsg = state.vsComputer
-        ? (winner === 1 ? '승리!' : '컴퓨터 승리!')
-        : `플레이어 ${winner} 승리!`;
+        ? (winner === 1 ? '최후의 1인! 승리! 게임 종료.' : '컴퓨터가 최후의 1인으로 남았습니다. 게임 종료.')
+        : `최후의 1인! 플레이어 ${winner} 승리! 게임 종료.`;
       showToast(winMsg);
       state.canRoll = false;
-      dom.rollBtn.disabled = true;
+      if (dom.rollBtn) dom.rollBtn.disabled = true;
     } else if (active === 0) {
-      showToast('모두 파산! 무승부');
+      showToast('모두 파산! 무승부. 게임 종료.');
       state.canRoll = false;
-      dom.rollBtn.disabled = true;
+      if (dom.rollBtn) dom.rollBtn.disabled = true;
     }
   }
 }
