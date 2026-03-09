@@ -80,8 +80,9 @@ const START_MONEY = 1500000;
 const TEAM_TURN_ORDER = [1, 3, 2, 4];
 const SALARY = 200000; // 출발점 지나면 20만 원
 
-const BUILD_COST_RATE = [0, 0.5, 0.7, 0.9];   // 별장 50%, 빌딩 70%, 호텔 90%
-const BUILD_RENT_BONUS = [0, 0.5, 0.7, 0.9];   // 별장 +50%, 빌딩 +70%, 호텔 +90%
+const BUILD_COST_RATE = [0, 0.5, 0.7, 0.9, 0.9];   // 별장 50%, 빌딩 70%, 호텔 90%, 호텔2 90%
+const BUILD_RENT_BONUS = [0, 0.5, 0.7, 0.9, 1.0];  // 별장 +50%, 빌딩 +70%, 호텔 +90%, 호텔2 +100%
+const MAX_BUILD_LEVEL = 4;   // 호텔 2개까지
 
 // 보드 셀 정의 (시작=오른쪽 아래) - 각 줄의 3번째 칸=황금카드, 6번째 칸=세금
 // 첫줄: 아래쪽(충청/강원) | 둘째: 왼쪽(전라) | 셋째: 위쪽(경상) | 넷째: 오른쪽(서울/경기)
@@ -834,7 +835,7 @@ function computerBuy(cellIndex) {
 
 function computerBuild(cellIndex) {
   const level = state.buildingLevel[cellIndex] || 0;
-  if (level >= 3) {
+  if (level >= MAX_BUILD_LEVEL) {
     tryNextTurn();
     return;
   }
@@ -1042,7 +1043,7 @@ function landOnCell(cellIndex, player) {
       tryNextTurn();
       break;
     case 'chance': {
-      const REPAIR_PER_LEVEL = [0, 20000, 35000, 55000]; // 없음, 별장, 빌딩, 호텔당 수리비(원)
+      const REPAIR_PER_LEVEL = [0, 20000, 35000, 55000, 55000]; // 없음, 별장, 빌딩, 호텔, 호텔×2
       const chanceResults = [
         { type: 'money', msg: '복권 당첨! ₩10만 수령', money: 100000 },
         { type: 'money', msg: '길에서 ₩5만 획득', money: 50000 },
@@ -1092,6 +1093,7 @@ function landOnCell(cellIndex, player) {
       } else if (r.type === 'giveAwayProperty') {
         const owned = CELLS.map((c, i) => ({ i, cell: c }))
           .filter(({ i, cell }) => cell.type === 'property' && state.ownership[i] === player)
+          .filter(({ i }) => (state.buildingLevel[i] || 0) < MAX_BUILD_LEVEL)
           .map(({ i }) => ({ i, value: getTotalPropertyValue(i) }))
           .sort((a, b) => b.value - a.value);
         if (owned.length > 0) {
@@ -1114,7 +1116,7 @@ function landOnCell(cellIndex, player) {
           updateBoardBuildings();
           updatePanels();
         } else {
-          showToast('소유 땅이 없어 적용되지 않습니다.');
+          showToast('넘겨줄 땅이 없습니다. (호텔 2개인 땅은 넘길 수 없음)');
         }
       }
       checkBankrupt();
@@ -1165,8 +1167,8 @@ function showBuyModal(cellIndex) {
   dom.modal.classList.remove('hidden');
 }
 
-const BUILD_NAMES = ['', '별장', '빌딩', '호텔'];
-const BUILD_SYMBOLS = ['', '▲', '■', '★'];
+const BUILD_NAMES = ['', '별장', '빌딩', '호텔', '호텔×2'];
+const BUILD_SYMBOLS = ['', '▲', '■', '★', '★★'];
 
 function getBuildCost(cellIndex, nextLevel) {
   const cell = CELLS[cellIndex];
@@ -1183,11 +1185,11 @@ function showBuildModal(cellIndex) {
   const buildModalPass = document.getElementById('buildModalPass');
 
   buildModalTitle.textContent = `${cell.name} - 건물 짓기`;
-  buildModalMessage.textContent = level >= 3 ? '호텔까지 완성되었습니다.' : '건물을 짓으면 통행료가 올라갑니다.';
+  buildModalMessage.textContent = level >= MAX_BUILD_LEVEL ? '호텔 2개까지 완성되었습니다.' : '건물을 짓으면 통행료가 올라갑니다.';
 
   if (state.onlineRole === 'guest' && state.onlineConn) {
     buildOptions.innerHTML = '';
-    if (level < 3) {
+    if (level < MAX_BUILD_LEVEL) {
       const cost = getBuildCost(cellIndex, level + 1);
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -1201,7 +1203,7 @@ function showBuildModal(cellIndex) {
     return;
   }
 
-  if (level >= 3) {
+  if (level >= MAX_BUILD_LEVEL) {
     buildOptions.innerHTML = '';
     buildModalPass.onclick = () => {
       buildModal.classList.add('hidden');
