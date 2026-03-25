@@ -1,0 +1,8 @@
+{
+  "appId": "com.burumable.app",
+  "appName": "부루마블",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

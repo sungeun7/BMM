@@ -3,7 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "npx serve . -p 3000",
-    "serve": "npx serve . -p 3000"
+    "start": "npx serve . -p 5173",
+    "serve": "npx serve . -p 5173",
+    "copy:www": "node scripts/copy-www.cjs",
+    "cap:sync": "npm run copy:www && npx cap sync",
+    "android:open": "npm run cap:sync && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
   }
 }

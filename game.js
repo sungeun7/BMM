@@ -348,6 +348,7 @@ function getRentFee(cellIndex, owner) {
 }
 
 function init() {
+  registerServiceWorker();
   dom.board = document.getElementById('board');
   dom.players = document.getElementById('players');
   dom.rollBtn = document.getElementById('rollBtn');
@@ -367,6 +368,13 @@ function init() {
 
   bindStartScreen();
   bindEvents();
+}
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
 }
 
 function bindStartScreen() {

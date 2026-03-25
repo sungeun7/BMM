@@ -1,4 +1,9 @@
 /* 부루마블 - 모바일 퍼스트 */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 :root {
   --bg-dark: #0d2818;
   --bg-board: #1a472a;
@@ -31,6 +36,9 @@ body {
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 #app {
@@ -39,12 +47,16 @@ body {
   display: flex;
   flex-direction: column;
   padding: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* 헤더 */
 .header {
   background: linear-gradient(180deg, var(--bg-board) 0%, var(--bg-dark) 100%);
   padding: 12px 16px;
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
   text-align: center;
   border-bottom: 3px solid var(--gold);
   flex-shrink: 0;
@@ -95,6 +107,10 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  padding-top: max(24px, env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
   background: var(--bg-dark);
   text-align: center;
 }
@@ -230,7 +246,8 @@ body {
   min-width: 0;
   padding: 10px 12px 10px 12px;
   padding-right: 70px;
-  font-size: 1rem;
+  /* iOS: 16px 미만이면 포커스 시 화면 확대되어 레이아웃 깨짐 */
+  font-size: max(16px, 1rem);
   border: none;
   border-radius: 0;
   background: transparent;
@@ -263,7 +280,7 @@ body {
 .room-code-input {
   flex: 1;
   padding: 10px 12px;
-  font-size: 1rem;
+  font-size: max(16px, 1rem);
   border: 1px solid rgba(255,255,255,0.3);
   border-radius: 8px;
   background: rgba(255,255,255,0.08);
@@ -302,16 +319,21 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 12px;
   gap: 16px;
 }
 
-/* 보드 래퍼 - 칸이 더 크게 보이도록 보드 확대 */
+/* 보드 래퍼 - 100vw는 iOS 등에서 가로 스크롤·깨짐 유발 → 부모 기준 % 사용 */
 .board-wrap {
   position: relative;
-  width: min(420px, calc(100vw - 16px));
+  width: min(420px, 100%);
+  max-width: 100%;
   flex-shrink: 0;
   overflow: visible;
+  box-sizing: border-box;
 }
 
 /* 보드 중앙 - 한국 지도 (빈칸 안에만 표시, 칸 밖으로 나가지 않음) */
@@ -616,7 +638,8 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 100;
-  padding: 20px;
+  padding: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
   animation: fadeIn 0.2s ease;
 }
 
@@ -716,7 +739,7 @@ body {
 
 .toast {
   position: fixed;
-  bottom: 24px;
+  bottom: max(24px, env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   background: rgba(0,0,0,0.85);
@@ -745,6 +768,6 @@ body {
 
 /* 반응형 - 세로가 짧은 경우 */
 @media (max-height: 600px) {
-  .board-wrap { width: min(260px, 90vw); }
-  .player-panels { max-width: 300px; }
+  .board-wrap { width: min(260px, 100%); }
+  .player-panels { max-width: min(300px, 100%); }
 }

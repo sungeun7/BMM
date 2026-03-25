@@ -25,6 +25,16 @@
    2. 저장소 **Settings → Pages**에서 Source를 해당 브랜치로 설정  
    3. `https://[사용자명].github.io/[저장소명]/` 주소로 접속 후, 위 주소를 친구에게 공유
 
+4. **APK로 설치 (Android)**  
+   휴대폰에 앱처럼 설치하려면 **Capacitor**로 APK를 만듭니다.  
+   자세한 절차는 **[BUILD-APK.md](BUILD-APK.md)** 를 참고하세요. (Node.js + Android Studio 필요)
+
+5. **앱처럼 사용 (APK 없이 홈 화면 설치)**  
+   이 프로젝트는 PWA로 설치할 수 있습니다.  
+   - Android Chrome: 메뉴(⋮) → **홈 화면에 추가** 또는 **앱 설치**  
+   - iPhone Safari: 공유 버튼 → **홈 화면에 추가**  
+   설치 후 아이콘으로 실행하면 브라우저 탭이 아닌 앱처럼(standalone) 실행됩니다.
+
 ### 접속이 안 될 때
 
 **휴대폰에서 게임 페이지가 안 뜨는 경우**

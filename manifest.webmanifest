@@ -1,0 +1,18 @@
+{
+  "name": "부루마블",
+  "short_name": "부루마블",
+  "description": "모바일 브라우저에서 즐기는 부루마블 게임",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d2818",
+  "theme_color": "#1a472a",
+  "icons": [
+    {
+      "src": "우리나라.jpg",
+      "sizes": "any",
+      "type": "image/jpeg"
+    }
+  ]
+}
